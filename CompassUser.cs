@@ -27,5 +27,6 @@ public class CompassUserPresenceEntry {
     public DateTime TimePeriodEnd { get; set; }
     public bool TeachingTime { get; set; }
     public int Status { get; set; }
+    public bool Present { get; set; }
     public string StatusName { get; set; }
 }

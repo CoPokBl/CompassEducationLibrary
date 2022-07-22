@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -16,31 +17,33 @@ public class CompassClient {
     private string _userId;
     private bool _isLoggedIn;
     private readonly string _schoolPrefix;
-
-    private const string LoginUrlConst = "https://{school}.compass.education/login.aspx?sessionstate=disabled";
-    private string LoginUrl => LoginUrlConst.Replace("{school}", _schoolPrefix);
-
-    private const string GetClassesUrlConst =
-        "https://{school}.compass.education/Services/Calendar.svc/GetCalendarEventsByUser" +
-        "?sessionstate=readonly&" +
-        "includeEvents=false&" +
-        "includeAllPd=false&" +
-        "includeExams=false&" +
-        "includeVolunteeringEvent=false";
-    private string GetClassesUrl => GetClassesUrlConst.Replace("{school}", _schoolPrefix);
-
-    private const string GetNewsItemsUrlConst = "https://{school}.compass.education/Services/NewsFeed.svc/GetMyNewsFeedPaged?sessionstate=readonly";
-    private string GetNewsItemsUrl => GetNewsItemsUrlConst.Replace("{school}", _schoolPrefix);
-
-    private const string GetUserInfoUrlConst =
-        "https://{school}.compass.education/Services/User.svc/GetUserDetailsBlobByUserId?sessionstate=readonly";
-    private string GetUserInfoUrl => GetUserInfoUrlConst.Replace("{school}", _schoolPrefix);
-
-    private const string GetClassNamesConst = "https://{school}.compass.education/Services/Communications.svc/GetClassTeacherDetailsByStudent?sessionstate=readonly";
-    private string GetClassNamesUrl => GetClassNamesConst.Replace("{school}", _schoolPrefix);
     
-    private const string MainUrlConst = "https://{school}.compass.education";
-    private string MainUrl => MainUrlConst.Replace("{school}", _schoolPrefix);
+    private string LoginUrl => "https://{school}.compass.education/login.aspx?sessionstate=disabled"
+        .Replace("{school}", _schoolPrefix);
+    private string GetClassesUrl {
+        get {
+            const string url = "https://{school}.compass.education/Services/Calendar.svc/GetCalendarEventsByUser" +
+                               "?sessionstate=readonly&" +
+                               "includeEvents=false&" +
+                               "includeAllPd=false&" +
+                               "includeExams=false&" +
+                               "includeVolunteeringEvent=false";
+            return url.Replace("{school}", _schoolPrefix);
+        }
+    }
+
+    private string GetNewsItemsUrl => "https://{school}.compass.education/Services/NewsFeed.svc/GetMyNewsFeedPaged?sessionstate=readonly"
+        .Replace("{school}", _schoolPrefix);
+    private string GetUserInfoUrl => "https://{school}.compass.education/Services/User.svc/GetUserDetailsBlobByUserId?sessionstate=readonly"
+        .Replace("{school}", _schoolPrefix);
+    private string GetClassNamesUrl => "https://{school}.compass.education/Services/Communications.svc/GetClassTeacherDetailsByStudent?sessionstate=readonly"
+        .Replace("{school}", _schoolPrefix);
+    private string MainUrl => "https://{school}.compass.education"
+        .Replace("{school}", _schoolPrefix);
+    private string GetTasksUrl => "https://rowvillesc-vic.compass.education/Services/LearningTasks.svc/GetAllLearningTasksByUserId?sessionstate=readonly"
+        .Replace("{school}", _schoolPrefix);
+    
+    
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CompassClient"/> class.
@@ -206,6 +209,7 @@ public class CompassClient {
         Log("Sending request: " + body);
         StringContent content = new (body);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        Log(GetClassesUrl);
         HttpResponseMessage response = await client.PostAsync(GetClassesUrl, content);
         string json = await response.Content.ReadAsStringAsync();
         Log("Response: " + json);
@@ -228,6 +232,7 @@ public class CompassClient {
         Log("Sending request: " + body);
         content = new StringContent(body);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        Log(GetClassNamesUrl);
         HttpResponseMessage namesResponse = await client.PostAsync(GetClassNamesUrl, content);
         string namesJson = await namesResponse.Content.ReadAsStringAsync();
         Log("Response: " + namesJson);
@@ -261,7 +266,7 @@ public class CompassClient {
             RollMarked = classItem.GetProperty("rollMarked").GetBoolean(),
             Room = classItem.GetProperty("longTitleWithoutTime").GetString()!.Split('-')[^2],
             Name = classItem.GetProperty("managerId").ValueKind != JsonValueKind.Null ? 
-                classItem.GetProperty("managerId").TryGetInt32(out int manId) ? namesMap[manId] : "Unknown" : "Unknown"
+                classItem.GetProperty("managerId").TryGetInt32(out int manId) ? namesMap.ContainsKey(manId) ? namesMap[manId] : "Unknown" : "Unknown" : "Unknown"
         }).OrderByDescending(c => c.StartTime).Reverse();
     }
 
@@ -359,10 +364,11 @@ public class CompassClient {
                 TimePeriodStart = presenceElement.GetProperty("start").GetDateTime().ToLocalTime(),
                 TimePeriodEnd = presenceElement.GetProperty("finish").GetDateTime().ToLocalTime(),
                 AttendanceOverride = presenceElement.GetProperty("attendanceOverride").GetBoolean(),
-                Status = presenceElement.GetProperty("status").GetInt32(),
+                Status = presenceElement.GetProperty("status").ValueKind != JsonValueKind.Null ? presenceElement.GetProperty("status").GetInt32() : -1,
                 StatusName = presenceElement.GetProperty("statusName").GetString(),
                 TeachingTime = presenceElement.GetProperty("teachingTime").GetBoolean(),
-                TimePeriodName = presenceElement.GetProperty("name").GetString()
+                TimePeriodName = presenceElement.GetProperty("name").GetString(),
+                Present = (presenceElement.GetProperty("status").ValueKind != JsonValueKind.Null ? presenceElement.GetProperty("status").GetInt32() : -1) == 1
             })
             .ToArray();
 
@@ -383,6 +389,69 @@ public class CompassClient {
             Presence = presence
         };
         return userObj;
+    }
+    
+    public async Task<IEnumerable<CompassLearningTask>> GetLearningTasks(int start = 0, int limit = 25, int page = 1, bool showHiddenTasks = false) {
+        if (!_isLoggedIn) throw new CompassException("Not logged in");
+
+        HttpClient client = new ();
+        client.DefaultRequestHeaders.Add("Cookie", _cookie);
+        Log("Cookie: " + _cookie);
+        string body = "{" +
+                      "\"forceTaskId\":0," +
+                      $"\"userId\":{_userId}," +
+                      "\"sort\":\"[{\\\"property\\\":\\\"groupName\\\",\\\"direction\\\":\\\"ASC\\\"},{\\\"property\\\":\\\"dueDateTimestamp\\\",\\\"direction\\\":\\\"DESC\\\"}]\"," +
+                      $"\"start\":{start}," +
+                      $"\"limit\":{limit}," +
+                      $"\"page\":{page}," +
+                      $"\"showHiddenTasks\":{showHiddenTasks.ToString().ToLower()}" +
+                      "}";
+        Log("Sending request: " + body);
+        StringContent content = new (body);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        HttpResponseMessage response = await client.PostAsync(GetTasksUrl, content);
+        string json = await response.Content.ReadAsStringAsync();
+        Log("Response: " + json);
+        
+        if (!response.IsSuccessStatusCode) {
+            Log(response.StatusCode.ToString());
+            return null;
+        }
+
+        Log("Parsing response");
+        JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement;
+        JsonElement.ArrayEnumerator tasksElement = root.GetProperty("d").GetProperty("data").EnumerateArray();
+
+        List<CompassLearningTask> list = new();
+        foreach (JsonElement taskElement in tasksElement) {
+            CompassLearningTaskAttachment[] attachments;
+            if (taskElement.GetProperty("attachments").ValueKind == JsonValueKind.Null) {
+                attachments = Array.Empty<CompassLearningTaskAttachment>();
+            }
+            else {
+                JsonElement.ArrayEnumerator attachmentsElement = taskElement.GetProperty("attachments").EnumerateArray();
+                attachments = attachmentsElement.Select(attachmentElement => new CompassLearningTaskAttachment {
+                        Id = attachmentElement.GetProperty("id").GetString(), 
+                        Name = attachmentElement.GetProperty("name").GetString(), 
+                        Url = $"{MainUrl}/Services/FileAssets.svc/DownloadFile?id={attachmentElement.GetProperty("id").GetString()}&originalFileName={Uri.EscapeDataString(attachmentElement.GetProperty("fileName").GetString()!)}", 
+                        FileName = attachmentElement.GetProperty("fileName").GetString(),
+                    })
+                    .ToArray();
+            }
+            list.Add(new CompassLearningTask {
+                ClassShortName = taskElement.GetProperty("activityName").GetString(),
+                ClassId = taskElement.GetProperty("activityId").GetInt32(),
+                ClassName = taskElement.GetProperty("subjectName").GetString(),
+                CreationDateTime = taskElement.GetProperty("createdTimestamp").GetDateTime().ToLocalTime(),
+                DueDate = taskElement.GetProperty("dueDateTimestamp").ValueKind != JsonValueKind.Null ? taskElement.GetProperty("dueDateTimestamp").GetDateTime().ToLocalTime() : DateTime.MaxValue,
+                Name = taskElement.GetProperty("name").GetString(),
+                Description = taskElement.GetProperty("description").GetString(),
+                Attachments = attachments
+            });
+        }
+
+        return list;
     }
 
 }
