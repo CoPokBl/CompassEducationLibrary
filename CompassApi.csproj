@@ -2,6 +2,14 @@
 
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <Title>Compass Education Library</Title>
+        <Authors>CoPokBl</Authors>
+        <Description>A library to interact with Compass Education's services</Description>
+        <PackageProjectUrl>https://github.com/CoPokBl/CompassEducationLibrary</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/CoPokBl/CompassEducationLibrary</RepositoryUrl>
+        <RepositoryType>Git</RepositoryType>
+        <PackageTags>Compass Education</PackageTags>
     </PropertyGroup>
 
 </Project>
