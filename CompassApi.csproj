@@ -10,6 +10,8 @@
         <RepositoryUrl>https://github.com/CoPokBl/CompassEducationLibrary</RepositoryUrl>
         <RepositoryType>Git</RepositoryType>
         <PackageTags>Compass Education</PackageTags>
+        <PackageLicense>https://raw.githubusercontent.com/CoPokBl/CompassEducationLibrary/main/LICENSE</PackageLicense>
+        <PackageLicenseUrl>https://raw.githubusercontent.com/CoPokBl/CompassEducationLibrary/main/LICENSE</PackageLicenseUrl>
     </PropertyGroup>
 
 </Project>
