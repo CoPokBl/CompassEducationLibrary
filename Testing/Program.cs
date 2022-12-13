@@ -16,6 +16,9 @@ foreach (CompassClass compassClass in classes) {
     Console.WriteLine($"{compassClass.Room} {compassClass.Name} {compassClass.Id} {compassClass.Teacher} " +
                       $"(Roll Marked: {compassClass.RollMarked}): " +
                       $"{compassClass.StartTime.ToShortTimeString()} - {compassClass.EndTime.ToShortTimeString()}");
+    if (compassClass.ActivityType == CompassClassType.Normal) {
+        Console.WriteLine("Lesson Plan: " + (await client.GetLesson(compassClass.LessonId!)).LessonPlan);
+    }
 }
 
 return;
