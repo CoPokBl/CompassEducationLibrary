@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.AccessControl;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -31,7 +32,6 @@ public class CompassClient {
             return url.Replace("{school}", _schoolPrefix);
         }
     }
-
     private string GetNewsItemsUrl => "https://{school}.compass.education/Services/NewsFeed.svc/GetMyNewsFeedPaged?sessionstate=readonly"
         .Replace("{school}", _schoolPrefix);
     private string GetUserInfoUrl => "https://{school}.compass.education/Services/User.svc/GetUserDetailsBlobByUserId?sessionstate=readonly"
@@ -40,7 +40,9 @@ public class CompassClient {
         .Replace("{school}", _schoolPrefix);
     private string MainUrl => "https://{school}.compass.education"
         .Replace("{school}", _schoolPrefix);
-    private string GetTasksUrl => "https://rowvillesc-vic.compass.education/Services/LearningTasks.svc/GetAllLearningTasksByUserId?sessionstate=readonly"
+    private string GetTasksUrl => "https://{school}.compass.education/Services/LearningTasks.svc/GetAllLearningTasksByUserId?sessionstate=readonly"
+        .Replace("{school}", _schoolPrefix);
+    private string GetLessonUrl => "https://{school}.compass.education/Services/Activity.svc/GetLessonsByInstanceId?sessionstate=readonly"
         .Replace("{school}", _schoolPrefix);
     
     
@@ -111,7 +113,14 @@ public class CompassClient {
                 new KeyValuePair<string, string>("__EVENTTARGET", "button1"),
             });
             Log(await content.ReadAsStringAsync());
-            HttpResponseMessage response = await client.PostAsync(LoginUrl, content);
+            HttpResponseMessage response;
+            try {
+                response = await client.PostAsync(LoginUrl, content);
+            }
+            catch (Exception e) {
+                Log("Error sending auth request: " + e.Message);
+                return false;
+            }
             Log("Authentication response: " + response.StatusCode);
             
             // Print all the headers
@@ -185,7 +194,7 @@ public class CompassClient {
     /// <param name="page">The page to get</param>
     /// <returns>A list of the classes</returns>
     /// <exception cref="CompassException">When you are not logged in</exception>
-    public async Task<IEnumerable<CompassClass>> GetClasses(DateTime? startDate = null, DateTime? endDate = null, int limit = 25, int page = 1) {
+    public async Task<IEnumerable<CompassClass>> GetClassesOld(DateTime? startDate = null, DateTime? endDate = null, int limit = 25, int page = 1) {
         if (!_isLoggedIn) throw new CompassException("Not logged in");
         
         startDate ??= DateTime.Now;
@@ -268,6 +277,127 @@ public class CompassClient {
             Name = classItem.GetProperty("managerId").ValueKind != JsonValueKind.Null ? 
                 classItem.GetProperty("managerId").TryGetInt32(out int manId) ? namesMap.ContainsKey(manId) ? namesMap[manId] : "Unknown" : "Unknown" : "Unknown"
         }).OrderByDescending(c => c.StartTime).Reverse();
+    }
+    
+    /// <summary>
+    /// Gets the classes that the user has during the given time period.
+    /// </summary>
+    /// <param name="startDate">The earliest date to get classes for</param>
+    /// <param name="endDate">The latest date to get classes for</param>
+    /// <param name="limit">The maximum amount of classes to get</param>
+    /// <param name="page">The page to get</param>
+    /// <returns>A list of the classes</returns>
+    /// <exception cref="CompassException">When you are not logged in</exception>
+    public async Task<IEnumerable<CompassClass>> GetClasses(DateTime? startDate = null, DateTime? endDate = null, int limit = 25, int page = 1) {
+        if (!_isLoggedIn) throw new CompassException("Not logged in");
+        
+        startDate ??= DateTime.Now;
+        endDate ??= DateTime.Now;
+        
+        HttpClient client = new ();
+        client.DefaultRequestHeaders.Add("Cookie", _cookie);
+        Log("Cookie: " + _cookie);
+        string body = "{" +
+                      $"\"userId\":\"{_userId}\"," + 
+                      "\"homePage\":false," +
+                      "\"activityId\":null," +
+                      "\"locationId\":null," +
+                      "\"staffIds\":null," +
+                      $"\"startDate\":\"{startDate.Value:yyyy-MM-dd}\"," +
+                      $"\"endDate\":\"{endDate.Value:yyyy-MM-dd}\"," +
+                      $"\"page\":{page}," +
+                      "\"start\":0," +
+                      $"\"limit\":{limit}" +
+                      "}";
+        Log("Sending request: " + body);
+        StringContent content = new (body);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        Log(GetClassesUrl);
+        HttpResponseMessage response = await client.PostAsync(GetClassesUrl, content);
+        string json = await response.Content.ReadAsStringAsync();
+        Log("Response: " + json);
+        
+        if (!response.IsSuccessStatusCode) {
+            Log(response.StatusCode.ToString());
+            return null;
+        }
+
+        Log("Parsing response");
+        JsonDocument classesDoc = JsonDocument.Parse(json);
+        JsonElement root = classesDoc.RootElement;
+        JsonElement.ArrayEnumerator classElements = root.GetProperty("d").EnumerateArray();
+        
+        List<CompassClass> classes = new();
+        foreach (JsonElement classElement in classElements) {
+            CompassClass compassClass = new() {
+                Id = classElement.GetProperty("title").GetString(),
+                StartTime = classElement.GetProperty("start").GetDateTime().ToLocalTime(),
+                EndTime = classElement.GetProperty("finish").GetDateTime().ToLocalTime(),
+                RollMarked = classElement.GetProperty("rollMarked").GetBoolean(),
+                ActivityType = CompassClass.TypeIntToEnum(classElement.GetProperty("activityType").GetInt32()),
+                HtmlRoom = "Unknown",
+                Name = "Unknown",
+                Room = "Unknown",
+                Teacher = "Unknown",
+                TeacherImageLink = "Unknown"
+            };
+            try {
+                compassClass.HtmlRoom = classElement.GetProperty("longTitleWithoutTime").GetString()!.Split('-')[^2];
+            }
+            catch (Exception) {
+                compassClass.HtmlRoom = "Unknown";
+            }
+
+            // Get more info
+            Log("Getting more info for " + compassClass.Id);
+            string instanceId = classElement.GetProperty("instanceId").GetString();
+            client = new HttpClient();
+            client.DefaultRequestHeaders.Add("Cookie", _cookie);
+            body = "{" +
+                   $"\"instanceId\":\"{instanceId}\"," +
+                   "}";
+            content = new StringContent(body);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            HttpResponseMessage infoResponse = await client.PostAsync(GetLessonUrl, content);
+            string infoJson = await infoResponse.Content.ReadAsStringAsync();
+            JsonDocument infoDoc = JsonDocument.Parse(infoJson);
+            JsonElement infoRoot = infoDoc.RootElement;
+            bool go = true;
+            try {
+                while (go) {
+                    go = false;
+                    JsonElement data = infoRoot.GetProperty("d");
+                    if (data.ValueKind == JsonValueKind.Null) {
+                        break;
+                    }
+
+                    JsonElement instances = data.GetProperty("Instances");
+                    if (data.ValueKind == JsonValueKind.Null) {
+                        break;
+                    }
+
+                    JsonElement info = instances.EnumerateArray().First();
+
+                    compassClass.Teacher = info.GetProperty("ManagerTextReadable").GetString();
+                    compassClass.TeacherImageLink = MainUrl + info.GetProperty("ManagerPhotoPath").GetString();
+                    compassClass.Name = info.GetProperty("SubjectName").GetString();
+
+                    JsonElement locDetails = info.GetProperty("LocationDetails");
+                    if (locDetails.ValueKind == JsonValueKind.Null) {
+                        break;
+                    }
+
+                    compassClass.Room = locDetails.GetProperty("longName").GetString();
+                }
+            }
+            catch (Exception) {
+                // Ignore any error because it means that that info is not available
+            }
+            
+            
+            classes.Add(compassClass);
+        }
+        return classes.OrderByDescending(c => c.StartTime);
     }
 
     /// <summary>

@@ -12,7 +12,18 @@
         <PackageTags>Compass Education</PackageTags>
         <PackageLicense>https://raw.githubusercontent.com/CoPokBl/CompassEducationLibrary/main/LICENSE</PackageLicense>
         <PackageLicenseUrl>https://raw.githubusercontent.com/CoPokBl/CompassEducationLibrary/main/LICENSE</PackageLicenseUrl>
-        <PackageVersion>1.1.0</PackageVersion>
+        <PackageVersion>1.2.0</PackageVersion>
     </PropertyGroup>
+    
+    <!-- Exclude everything in the Testing folder from the project -->
+    <ItemGroup>
+        <None Remove="Testing\**" />
+    </ItemGroup>
+    <ItemGroup>
+      <Compile Remove="Testing\**" />
+    </ItemGroup>
+    <ItemGroup>
+      <EmbeddedResource Remove="Testing\**" />
+    </ItemGroup>
 
 </Project>
