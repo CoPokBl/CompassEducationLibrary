@@ -6,7 +6,7 @@ Task Log(string msg) {
 }
 
 CompassClient client = new ("rowvillesc-vic", Log);
-client.Authenticate("har0155", "ZaneH13!!").Wait();
+client.Authenticate("usr", "psw").Wait();
 IEnumerable<CompassClass> classes = client.GetClasses(new DateTime(2022, 11, 16), new DateTime(2022, 11, 17)).Result;
 if (classes == null) {
     Console.WriteLine("No classes found");
@@ -16,6 +16,9 @@ foreach (CompassClass compassClass in classes) {
     Console.WriteLine($"{compassClass.Room} {compassClass.Name} {compassClass.Id} {compassClass.Teacher} " +
                       $"(Roll Marked: {compassClass.RollMarked}): " +
                       $"{compassClass.StartTime.ToShortTimeString()} - {compassClass.EndTime.ToShortTimeString()}");
+    if (compassClass.ActivityType == CompassClassType.Normal) {
+        Console.WriteLine("Lesson Plan: " + (await client.GetLesson(compassClass.LessonId!)).LessonPlan);
+    }
 }
 
 return;

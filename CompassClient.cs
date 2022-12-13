@@ -44,6 +44,10 @@ public class CompassClient {
         .Replace("{school}", _schoolPrefix);
     private string GetLessonUrl => "https://{school}.compass.education/Services/Activity.svc/GetLessonsByInstanceId?sessionstate=readonly"
         .Replace("{school}", _schoolPrefix);
+
+    private string GetLessonPlanUrl =>
+        "https://{school}.compass.education/Services/FileAssets.svc/DownloadFile?sessionstate=readonly&id="
+            .Replace("{school}", _schoolPrefix);
     
     
 
@@ -335,6 +339,7 @@ public class CompassClient {
                 EndTime = classElement.GetProperty("finish").GetDateTime().ToLocalTime(),
                 RollMarked = classElement.GetProperty("rollMarked").GetBoolean(),
                 ActivityType = CompassClass.TypeIntToEnum(classElement.GetProperty("activityType").GetInt32()),
+                LessonId = classElement.GetProperty("instanceId").GetString(),
                 HtmlRoom = "Unknown",
                 Name = "Unknown",
                 Room = "Unknown",
@@ -350,11 +355,10 @@ public class CompassClient {
 
             // Get more info
             Log("Getting more info for " + compassClass.Id);
-            string instanceId = classElement.GetProperty("instanceId").GetString();
             client = new HttpClient();
             client.DefaultRequestHeaders.Add("Cookie", _cookie);
             body = "{" +
-                   $"\"instanceId\":\"{instanceId}\"," +
+                   $"\"instanceId\":\"{compassClass.LessonId}\"," +
                    "}";
             content = new StringContent(body);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
@@ -398,6 +402,47 @@ public class CompassClient {
             classes.Add(compassClass);
         }
         return classes.OrderByDescending(c => c.StartTime);
+    }
+
+    public async Task<CompassLesson?> GetLesson(string instanceId) {
+        HttpClient client = new HttpClient();
+        client.DefaultRequestHeaders.Add("Cookie", _cookie);
+        string body = "{" +
+                      $"\"instanceId\":\"{instanceId}\"," +
+                      "}";
+        StringContent content = new StringContent(body);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        HttpResponseMessage response = await client.PostAsync(GetLessonUrl, content);
+        string json = await response.Content.ReadAsStringAsync();
+        JsonDocument doc = JsonDocument.Parse(json);
+        JsonElement root = doc.RootElement;
+        JsonElement data = root.GetProperty("d");
+        JsonElement instances = data.GetProperty("Instances");
+        JsonElement info = instances.EnumerateArray().First(i => i.GetProperty("id").GetString() == instanceId);
+        CompassLesson lesson = new() {
+            Id = info.GetProperty("ActivityDisplayName").GetString(),
+            Name = info.GetProperty("SubjectName").GetString(),
+            Teacher = info.GetProperty("ManagerTextReadable").GetString(),
+            TeacherImageLink = MainUrl + info.GetProperty("ManagerPhotoPath").GetString(),
+            Room = info.GetProperty("locations").EnumerateArray().First().GetProperty("LocationDetails").GetProperty("longName").GetString(),
+            StartTime = info.GetProperty("st").GetDateTime().ToLocalTime(),
+            EndTime = info.GetProperty("fn").GetDateTime().ToLocalTime(),
+            LessonId = instanceId
+        };
+        
+        // Get lesson plan
+        client = new HttpClient();
+        client.DefaultRequestHeaders.Add("Cookie", _cookie);
+        string lessonPlanId = info.GetProperty("lp").GetProperty("fileAssetId").GetString()!;
+        Log("Getting lesson plan for " + lessonPlanId);
+        HttpResponseMessage planResponse = await client.GetAsync(GetLessonPlanUrl + lessonPlanId);
+        string planText = await planResponse.Content.ReadAsStringAsync();
+        if (planText.StartsWith("{\"h\":")) {  // It doesn't exist
+            planText = "";
+        }
+        lesson.LessonPlan = planText;
+        
+        return lesson;
     }
 
     /// <summary>

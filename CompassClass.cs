@@ -13,6 +13,7 @@ public class CompassClass {
     public CompassClassType ActivityType { get; set; }
     public string Teacher { get; set; }
     public string TeacherImageLink { get; set; }
+    public string? LessonId { get; set; }
 
     public static CompassClassType TypeIntToEnum(int type) {
         return type switch {
