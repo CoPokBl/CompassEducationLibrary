@@ -18,8 +18,10 @@ public class CompassClass {
     public static CompassClassType TypeIntToEnum(int type) {
         return type switch {
             1 => CompassClassType.Normal,
+            2 => CompassClassType.Event,
             5 => CompassClassType.Exempt,
             7 => CompassClassType.WeekNumber,
+            10 => CompassClassType.DueTask,
             _ => CompassClassType.Unknown
         };
     }
@@ -29,5 +31,7 @@ public enum CompassClassType {
     Normal,
     Unknown,
     Exempt,
-    WeekNumber
+    WeekNumber,
+    DueTask,
+    Event
 }

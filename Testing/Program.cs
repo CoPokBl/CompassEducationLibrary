@@ -1,24 +1,37 @@
 ﻿using CompassApi;
 
 Task Log(string msg) {
-    Console.WriteLine(msg);
+    //Console.WriteLine(msg);
     return Task.CompletedTask;
 }
 
 CompassClient client = new ("rowvillesc-vic", Log);
-client.Authenticate("usr", "psw").Wait();
-IEnumerable<CompassClass> classes = client.GetClasses(new DateTime(2022, 11, 16), new DateTime(2022, 11, 17)).Result;
-if (classes == null) {
+string[] creds = File.ReadAllLines("usrpass.txt");
+foreach (string line in creds) {
+    Console.WriteLine(line);
+}
+client.Authenticate(creds[0], creds[1]).Wait();
+CompassClass[] classes = client.GetClasses(false, new DateTime(2022, 11, 16), new DateTime(2022, 11, 17)).Result.ToArray();
+if (classes == null || !classes.Any()) {
     Console.WriteLine("No classes found");
     return;
 }
 foreach (CompassClass compassClass in classes) {
-    Console.WriteLine($"{compassClass.Room} {compassClass.Name} {compassClass.Id} {compassClass.Teacher} " +
+    Console.WriteLine($"{compassClass.Room} {compassClass.Name} {compassClass.Id} {compassClass.LessonId} {compassClass.Teacher} " +
                       $"(Roll Marked: {compassClass.RollMarked}): " +
                       $"{compassClass.StartTime.ToShortTimeString()} - {compassClass.EndTime.ToShortTimeString()}");
-    if (compassClass.ActivityType == CompassClassType.Normal) {
-        Console.WriteLine("Lesson Plan: " + (await client.GetLesson(compassClass.LessonId!)).LessonPlan);
+    CompassLesson? lesson = await client.GetLesson(compassClass.LessonId!);
+    if (lesson != null) {
+        Console.WriteLine("Lesson Plan: " + lesson!.LessonPlan);
+        IEnumerable<CompassLearningTask> lTasks = await client.GetLearningTasksByClass(lesson.ActivityId);
+        foreach (CompassLearningTask t in lTasks) {
+            Console.WriteLine(t.Name + " " + t.SubmissionStatus);
+            foreach (CompassLearningTaskSubmission s in t.Submissions) {
+                Console.WriteLine(s.FileName);
+            }
+        }
     }
+    // Teacher, Teacher Image Link, Name and Room
 }
 
 return;
