@@ -124,7 +124,7 @@ public class CompassClient {
                 response = await client.PostAsync(LoginUrl, content);
             }
             catch (Exception e) {
-                Log("Error sending auth request: " + e.Message);
+                Log("Error sending auth request: " + e);
                 return false;
             }
             Log("Authentication response: " + response.StatusCode);
@@ -134,7 +134,7 @@ public class CompassClient {
                 Log(header.Key + ": " + string.Join(", ", header.Value));
             }
             
-            await File.WriteAllTextAsync("response.html", await response.Content.ReadAsStringAsync());
+            // await File.WriteAllTextAsync("response.html", await response.Content.ReadAsStringAsync());
             
             if (response.Headers.Contains("Set-Cookie")) {
                 Log("Setting cookies");
