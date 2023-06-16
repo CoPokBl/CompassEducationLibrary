@@ -1,11 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Security.AccessControl;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -349,8 +346,8 @@ public class CompassClient {
         foreach (JsonElement classElement in classElements) {
             CompassClass compassClass = new() {
                 Id = classElement.GetProperty("title").GetString(),
-                StartTime = classElement.GetProperty("start").GetDateTime().ToLocalTime(),
-                EndTime = classElement.GetProperty("finish").GetDateTime().ToLocalTime(),
+                StartTime = classElement.GetProperty("start").GetDateTime().ToUniversalTime(),
+                EndTime = classElement.GetProperty("finish").GetDateTime().ToUniversalTime(),
                 RollMarked = classElement.GetProperty("rollMarked").GetBoolean(),
                 ActivityType = CompassClass.TypeIntToEnum(classElement.GetProperty("activityType").GetInt32()),
                 LessonId = classElement.GetProperty("instanceId").GetString(),
